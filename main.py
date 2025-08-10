@@ -43,3 +43,33 @@ for key, value in attributes.items():
             attributes[key] = None
         else:
             attributes[key] = followup if followup.strip() else None
+
+from jobs_db import jobs_db
+
+def query_jobnova(preferences):
+    matches = []
+    for job in jobs_db:
+        score = 0
+        reasons = []
+        
+        for key, pref_value in preferences.items():
+            if pref_value and job.get(key):
+                if str(pref_value).lower() in str(job[key]).lower():
+                    score += 1
+                    reasons.append(f"Matches your {key}: {pref_value}")
+        
+        matches.append({"job": job, "score": score, "reasons": reasons})
+    
+    # Sort by score & return top 10
+    matches = sorted(matches, key=lambda x: x["score"], reverse=True)[:10]
+    return matches
+
+results = query_jobnova(attributes)
+
+print("\nTop job matches for you:\n")
+for idx, match in enumerate(results, 1):
+    job = match["job"]
+    print(f"{idx}. {job['role']} in {job['location']} ({job['domain']})")
+    print(f"   Salary: ${job['salary']}, Company Size: {job['company_size']}, Type: {job['employment_type']}")
+    print(f"   Reasons: {', '.join(match['reasons'])}")
+    print()
