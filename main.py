@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
+import json
 
 # Load the .env file
 load_dotenv()
@@ -31,4 +32,14 @@ response = client.chat.completions.create(
     temperature=0
 )
 
-print(response.choices[0].message["content"])
+#Saving data to a JSON file
+attributes = json.loads(response.choices[0].message["content"])
+
+#Ask follow-up questions for missing values
+for key, value in attributes.items():
+    if value is None:
+        followup = input(f"Would you like to specify the {key} for your ideal job?")
+        if followup.lower().contains("no"):
+            attributes[key] = None
+        else:
+            attributes[key] = followup if followup.strip() else None
