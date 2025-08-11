@@ -3,9 +3,8 @@ import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 #import dotenv
-from langchain_community.chat_models import ChatOpenAI
+#from langchain_openai import ChatOpenAI
 from jobs_db import jobs_db
-import methods
 
 #dotenv.load_dotenv()
 app = FastAPI()
