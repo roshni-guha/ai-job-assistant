@@ -2,49 +2,64 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain
+from jobs_db import jobs_db
+import methods
+from llama_index import GPTSimpleVectorIndex
 
 # Load the .env file
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
+memory = ConversationBufferMemory(memory_key="chat_history")
+conversation = ConversationChain(llm=llm, memory=memory)
 
 # Job Assistant
 
-# Ask the user for their job preferences
 user_input = input("Describe your ideal job: ")
 
+# Build the prompt
 prompt = f"""
-Extract the following job attributes from the text:
-- role
-- location
-- salary
-- domain/industry
-- company size
-- employment type
+Extract role, location, salary, domain, company size, and employment type. Respond ONLY in valid JSON.
 
-Respond in valid JSON.
-
-Text: "{user_input}"
+Text: {user_input}
 """
 
-response = client.chat.completions.create(
-    model="gpt-4o",  # or gpt-4
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0
-)
+response_text = conversation.run(prompt)
+attributes = json.loads(response_text)
 
-#Saving data to a JSON file
-attributes = json.loads(response.choices[0].message["content"])
+# Set session_attributes from first extraction
+session_attributes = {
+    "role": attributes.get("role"),
+    "location": attributes.get("location"),
+    "salary": attributes.get("salary"),
+    "domain": attributes.get("domain"),
+    "company_size": attributes.get("company_size"),
+    "employment_type": attributes.get("employment_type")
+}
 
-#Ask follow-up questions for missing values
-for key, value in attributes.items():
-    if value is None:
-        followup = input(f"Would you like to specify the {key} for your ideal job?")
-        if followup.lower().contains("no"):
-            attributes[key] = None
-        else:
-            attributes[key] = followup if followup.strip() else None
+def fill_missing_attributes():
+    while None in session_attributes.values():
+        missing_fields = [k for k, v in session_attributes.items() if v is None]
+        user_input = input(f"Please describe your {', '.join(missing_fields)}: ")
 
-from jobs_db import jobs_db
+        prompt = f"""
+        Extract role, location, salary, domain, company size, and employment type. Respond ONLY in valid JSON.
+
+        Text: {user_input}
+        """
+
+        response_text = conversation.run(prompt)
+        extracted = json.loads(response_text)
+
+        for key, value in extracted.items():
+            if value and not session_attributes[key]:
+                session_attributes[key] = value
+
+# Filling missing attributes
+fill_missing_attributes(session_attributes)
+
 
 def query_jobnova(preferences):
     matches = []
@@ -64,7 +79,17 @@ def query_jobnova(preferences):
     matches = sorted(matches, key=lambda x: x["score"], reverse=True)[:10]
     return matches
 
-results = query_jobnova(attributes)
+results = query_jobnova(session_attributes)
+
+docs = methods.jobs_to_documents(jobs_db)
+index = GPTSimpleVectorIndex(docs)
+
+index_response = index.query(session_attributes)
+print("\nLlamaIndex query result:\n")
+print(index_response)
+
+# your existing job matching with session_attributes
+results = query_jobnova(session_attributes)
 
 print("\nTop job matches for you:\n")
 for idx, match in enumerate(results, 1):
